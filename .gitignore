@@ -1,0 +1,8 @@
+.settings/
+Debug/
+Startup/
+Drivers/
+*.launch
+.cproject
+.project
+
