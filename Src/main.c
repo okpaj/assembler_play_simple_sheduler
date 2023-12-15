@@ -74,7 +74,7 @@ struct pushed_stack_t {
 typedef  void (* task_t)(void);
 
 struct TCB_t {
-	uint32_t *psp;
+	uint32_t psp;
 	uint32_t stack_size;
 	//void (* task)(void);
 	task_t task;
@@ -102,19 +102,10 @@ void Task_Config(void) {
 
 	for (int i = 0; i < TASK_NO; ++i) {
 		stack_size = sizeof (Task_Stack[0].e) / 4;
-		Task_Control[i].psp = Task_Stack[i].e + stack_size;
+		Task_Control[i].psp = (uint32_t)(Task_Stack[i].e + stack_size);
 
 		/* stack pointer should be aligned to double word  */
-		Task_Control[i].psp = (uint32_t *)((uint32_t)Task_Control[i].psp & 0xFFFFfff8);
-		//uint32_t m;
-		//m = (uint32_t)Task_Control[i].psp & 0x0000000F;
-		/*if ( (m != 0) || (m != 8)  ) {   Stack unalignend to 8 byte
-			if ( m < 8 ) {
-				Task_Control[i].psp = (uint32_t *)(((uint32_t)Task_Control[i].psp & 0xFFFFfff8) - 0x8ul);
-			} else {
-				Task_Control[i].psp = (uint32_t *)(((uint32_t)Task_Control[i].psp & 0xFFFFfff) - 0xFul);
-			}
-		}*/
+		Task_Control[i].psp = Task_Control[i].psp & 0xFFFFfff8;
 	}
 
 	pushed_frame = (struct pushed_stack_t *)(Task_Control[0].psp - 8);
@@ -133,31 +124,6 @@ void Task_Config(void) {
 	pushed_frame->xPSR = 0ul;
 
 	Set_PSP(Task_Control[0].psp);
-
-
-/*
-
-	Task_Control[0].task = &Task_On;
-	Task_Control[1].task = &Task_Off;
-
-
-	for (int i = 0; i < 0 && i < TASK_NO; ++i) {
-
-		--Task_Control[i].psp;
-		*((uint32_t *)Task_Control[0].psp) = 0;  PSR
-
-		// return address = PC meas starting addr of task
-		--Task_Control[i].psp;
-		*(Task_Control[i].psp) = (uint32_t)Task_Control[i].task;
-		//(task_t *)Task_Control[i].psp = Task_Control[i].task;
-				 LR, r12, and r0 - r3
-		for (int j = 0; j < 6; ++j) {
-			--Task_Control[i].psp;
-			*((uint32_t *)Task_Control[i].psp) = i*16 + j;
-		}
-	}
-
-*/
 
 }
 
