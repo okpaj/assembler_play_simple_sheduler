@@ -19,10 +19,8 @@ SVC_Handler:
 	mrs r1, control
 	orr r1, #1 			@ sets thread in nonprivilege mode
 	orr r1, #2			@ sets thread use PSP stack
-	msr control, r4
+	msr control, r1
 	isb
-
-	pop {lr}
 	bx lr
 	@bx r0   @<- to nie powoduje wyjscia z przerwania bo to nir kod specjalny
 

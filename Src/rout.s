@@ -11,6 +11,16 @@
 	.global Change2MainStack
 	.global Get_psp_addr
 
+	.global Set_PSP
+
+	@ r0 = in par 1 = psp value to set
+	@ returns nothing
+	@ void Set_PSP(uint32_t psp)
+
+	.type Set_PSP, %function
+Set_PSP:
+	msr psp, r0
+	bx lr
 
 	@.extern _estack
 

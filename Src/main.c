@@ -33,6 +33,8 @@ extern void ChangeStack(void);
 extern __attribute__((nacked)) void Change2MainStack(void);
 extern void * Get_psp_addr(void);
 
+extern void Set_PSP(uint32_t psp);
+
 
 void red_on(void);
 void red_off(void);
@@ -67,7 +69,7 @@ struct pushed_stack_t {
 };
 
 #define TASK_NO 2
-#define TASK_STACK_SIZE 128
+#define TASK_STACK_SIZE 64*4
 
 typedef  void (* task_t)(void);
 
@@ -130,6 +132,11 @@ void Task_Config(void) {
 	pushed_frame->pc = &Task_Off;
 	pushed_frame->xPSR = 0ul;
 
+	Set_PSP(Task_Control[0].psp);
+
+
+/*
+
 	Task_Control[0].task = &Task_On;
 	Task_Control[1].task = &Task_Off;
 
@@ -137,19 +144,20 @@ void Task_Config(void) {
 	for (int i = 0; i < 0 && i < TASK_NO; ++i) {
 
 		--Task_Control[i].psp;
-		*((uint32_t *)Task_Control[0].psp) = 0; /* PSR */
+		*((uint32_t *)Task_Control[0].psp) = 0;  PSR
 
 		// return address = PC meas starting addr of task
 		--Task_Control[i].psp;
 		*(Task_Control[i].psp) = (uint32_t)Task_Control[i].task;
 		//(task_t *)Task_Control[i].psp = Task_Control[i].task;
-				/* LR, r12, and r0 - r3 */
+				 LR, r12, and r0 - r3
 		for (int j = 0; j < 6; ++j) {
 			--Task_Control[i].psp;
 			*((uint32_t *)Task_Control[i].psp) = i*16 + j;
 		}
 	}
 
+*/
 
 }
 
