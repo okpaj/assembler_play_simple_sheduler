@@ -9,17 +9,48 @@
 	.global CallSVC
 	.global ChangeStack
 	.global Change2MainStack
-	.global Get_psp_addr
+	.global Get_PSP
 
 	.global Set_PSP
+	.global RegsToStack
+	.global StackToRegs
+
+	@
+	@ uint32_t RegsToStack(void);
+	@ callee saved registers to current process stack = PSP
+	@ returns stack pointer after saving registers
+	@ called in Handler
+	@
+	.type RegsToStack, %function
+RegsToStack:
+	mrs r0, psp
+	stmdb r0!, {r4 - r11}
+	bx lr
+
+
+	@ void StackToRegs(uint32_t sp);
+	.type StackToRegs, %function
+StackToRegs:
+	ldmia r0!, {r4-r11}
+	msr psp, r0
+	bx lr
 
 	@ r0 = in par 1 = psp value to set
 	@ returns nothing
-	@ void Set_PSP(uint32_t psp)
+	@ void Set_PSP(uint32_t new_psp)
 
 	.type Set_PSP, %function
 Set_PSP:
 	msr psp, r0
+	bx lr
+
+	@ no argument
+	@ returns uint32 = proces stack pointer PSP content
+	@ uint32_t Get_psp_addr(void)
+
+	.type Get_PSP, %function
+Get_PSP:
+	mrs r0, psp
 	bx lr
 
 	@.extern _estack
@@ -39,6 +70,11 @@ DisableInterrupts:
 WaitForInterrupt:
 	wfi
 	bx lr
+
+
+	@ just calls SVC
+	@ no arguments, no return value
+	@ void CallSVC(void)
 
 	.align 2
 	.type CallSVC, %function
@@ -73,7 +109,3 @@ Change2MainStack:
 	isb
 	bx lr
 
-	.type Get_psp_addr, %function
-Get_psp_addr:
-	mrs r0, psp
-	bx lr

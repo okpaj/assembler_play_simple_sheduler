@@ -9,7 +9,7 @@
   	.global	MemManage_Handler
   	.global BusFault_Handler
   	.global	UsageFault_Handler
-
+	.global PendSV_Handler
 
 	@.extern _estack
 
@@ -22,7 +22,11 @@ SVC_Handler:
 	msr control, r1
 	isb
 	bx lr
-	@bx r0   @<- to nie powoduje wyjscia z przerwania bo to nir kod specjalny
+
+	.type PendSV_Handler, %function
+PendSV_Handler:
+
+	bx lr
 
 	.type NMI_Handler, %function
 NMI_Handler:

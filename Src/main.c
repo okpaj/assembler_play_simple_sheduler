@@ -31,7 +31,7 @@ extern void WaitForInterrupt(void);
 extern void CallSVC(void);
 extern void ChangeStack(void);
 extern __attribute__((nacked)) void Change2MainStack(void);
-extern void * Get_psp_addr(void);
+extern void * Get_PSP(void);
 
 extern void Set_PSP(uint32_t psp);
 
@@ -69,14 +69,13 @@ struct pushed_stack_t {
 };
 
 #define TASK_NO 2
-#define TASK_STACK_SIZE 64*4
+#define TASK_STACK_SIZE 64
 
 typedef  void (* task_t)(void);
 
 struct TCB_t {
 	uint32_t psp;
-	uint32_t stack_size;
-	//void (* task)(void);
+	//uint32_t stack_size;
 	task_t task;
 	uint32_t regs_saved_extra[8];
 } volatile Task_Control[TASK_NO];
@@ -94,21 +93,39 @@ void Start_Scheduler(void);
 
 extern void switch_task();
 
+extern uint32_t RegsToStack(void);
+extern void StackToRegs(uint32_t * sp);
+
 
 void Task_Config(void) {
-	uint32_t stack_size;
+	uint32_t stack_size, psp;
 	Scheduler.current_task = 0ul;
 	struct pushed_stack_t *pushed_frame;
 
 	for (int i = 0; i < TASK_NO; ++i) {
 		stack_size = sizeof (Task_Stack[0].e) / 4;
-		Task_Control[i].psp = (uint32_t)(Task_Stack[i].e + stack_size);
+		Task_Control[i].psp = (uint32_t)(&Task_Stack[i].e + stack_size);
 
 		/* stack pointer should be aligned to double word  */
 		Task_Control[i].psp = Task_Control[i].psp & 0xFFFFfff8;
 	}
 
-	pushed_frame = (struct pushed_stack_t *)(Task_Control[0].psp - 8);
+	/*
+	 * Calculating (lowering) start of struct - it will go then up in memmory
+	 * Changing now .psp to
+	 * if  .psp is pointer should subtract just 8 to accomodate 8 words
+	 * but if .psp is as uint32 should subtract bytes 8 * 4 = 8 << 2
+	 *
+	 * Lesson1: Subtracting 7 words because .psp pointed to first free memory
+	 *
+	 * Lesson2: Now subtracting 8 words because if .psp was aligned to 8 bytes
+	 * then after subtracting 1 as above said (in lesson 1) new stack pointer
+	 * will not be aligned anymore to 8 bytes but to 4 bytes
+	 *
+	 */
+
+	Task_Control[0].psp -= (8)*4;
+	pushed_frame = (struct pushed_stack_t *)(Task_Control[0].psp);
 	pushed_frame->r0  = 0xAAAA0001;
 	pushed_frame->r1  = 0xAAAA0002;
 	pushed_frame->r2  = 0xAAAA0003;
@@ -118,12 +135,19 @@ void Task_Config(void) {
 	pushed_frame->pc  = &Task_On;
 	pushed_frame->xPSR = 0ul;
 
-	pushed_frame = (struct pushed_stack_t *)(Task_Control[1].psp - 8);
+	Set_PSP(Task_Control[0].psp);
+	psp = RegsToStack();
+	Task_Control[0].psp = psp;
+
+
+
+
+	pushed_frame = (struct pushed_stack_t *)(Task_Control[1].psp - (8-1)*4);
 	pushed_frame->r0 = 0xBBBB0001;
 	pushed_frame->pc = &Task_Off;
 	pushed_frame->xPSR = 0ul;
 
-	Set_PSP(Task_Control[0].psp);
+
 
 }
 
@@ -137,8 +161,6 @@ void Start_Scheduler(void) {
 }
 
 
-extern void RegsToStack(void);
-extern void StackToRegs(void);
 
 int main(void)
 {
@@ -203,7 +225,7 @@ void EXTI1_IRQHandler(void) {
 
 	//stack_marker(0xa0a0a0a0, 0xe0e0e0e0);
 
-	ps = Get_psp_addr();
+	ps = Get_PSP();
 
 	val = GPIOA->ODR;
 	if ( val & 4ul ) {
