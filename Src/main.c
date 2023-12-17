@@ -21,6 +21,7 @@
 #include "regs.h"
 #include "regs_core.h"
 
+
 void EXTI1_IRQHandler(void);
 void delay(uint32_t d);
 extern void EnableInterrupts(void);
@@ -28,7 +29,7 @@ extern void DisableInterrupts(void);
 void SysTick_Handler(void);
 
 extern void WaitForInterrupt(void);
-extern void CallSVC(void);
+extern void CallSVC(uint32_t);
 extern void ChangeStack(void);
 extern __attribute__((nacked)) void Change2MainStack(void);
 extern void * Get_PSP(void);
@@ -56,6 +57,8 @@ extern uint32_t _Min_Stack_Size;
 
 uint32_t volatile tick_counter;
 
+
+/* this is to easy placing things on prepared Task stacks */
 struct pushed_stack_t {
 	uint32_t r0;
 	uint32_t r1;
@@ -64,20 +67,21 @@ struct pushed_stack_t {
 	uint32_t r12;
 	uint32_t lr;
 	void (* pc)(void);
-	//uint32_t pc;
 	uint32_t xPSR;
 };
 
 #define TASK_NO 2
 #define TASK_STACK_SIZE 64
 
+enum TASK_STATE { RUNNIG, READY };
+
 typedef  void (* task_t)(void);
 
 struct TCB_t {
 	uint32_t psp;
-	//uint32_t stack_size;
+	enum TASK_STATE state;
 	task_t task;
-	uint32_t regs_saved_extra[8];
+	//uint32_t regs_saved_extra[8];
 } volatile Task_Control[TASK_NO];
 
 struct SCHED_t {
@@ -99,7 +103,6 @@ extern void StackToRegs(uint32_t * sp);
 
 void Task_Config(void) {
 	uint32_t stack_size, psp;
-	Scheduler.current_task = 0ul;
 	struct pushed_stack_t *pushed_frame;
 
 	for (int i = 0; i < TASK_NO; ++i) {
@@ -126,37 +129,52 @@ void Task_Config(void) {
 
 	Task_Control[0].psp -= (8)*4;
 	pushed_frame = (struct pushed_stack_t *)(Task_Control[0].psp);
-	pushed_frame->r0  = 0xAAAA0001;
+
+ 	pushed_frame->r0  = 0xAAAA0001;
 	pushed_frame->r1  = 0xAAAA0002;
 	pushed_frame->r2  = 0xAAAA0003;
 	pushed_frame->r3  = 0xAAAA0004;
 	pushed_frame->r12 = 0xAAAA0012;
-	pushed_frame->lr  = 0xFFFFfffd;
+	pushed_frame->lr  = 0xAAAA0013;
 	pushed_frame->pc  = &Task_On;
-	pushed_frame->xPSR = 0ul;
+
+	/*
+	 * lesson: xPSR contains Thumb mode bit, which should be always set
+	 * clearing it causes exeception.
+	 * So as I use: pushed_frame->xPSR = 0ul;
+	 * I was catching HardFault Exception.
+	 * xPSR should be 0x0100 0000
+	 *
+	 */
+
+	pushed_frame->xPSR = 0x01000000ul;
 
 	Set_PSP(Task_Control[0].psp);
-	psp = RegsToStack();
-	Task_Control[0].psp = psp;
+	//psp = RegsToStack();
+	//Task_Control[0].psp = psp;
 
 
-
-
-	pushed_frame = (struct pushed_stack_t *)(Task_Control[1].psp - (8-1)*4);
-	pushed_frame->r0 = 0xBBBB0001;
+	Task_Control[1].psp -= (8)*4;
+	pushed_frame = (struct pushed_stack_t *)(Task_Control[1].psp);
 	pushed_frame->pc = &Task_Off;
 	pushed_frame->xPSR = 0ul;
+	//Set_PSP(Task_Control[1].psp);
+	//psp = RegsToStack();
+	//Task_Control[1].psp = psp;
 
-
+	Set_PSP(Task_Control[0].psp);
+	Scheduler.current_task = 0ul;
 
 }
 
-void Start_Scheduler(void) {
-	uint32_t k;
+void SelectNextTask(void) {
 	++Scheduler.current_task;
 	Scheduler.current_task %= TASK_NO;
+}
 
-	k = Scheduler.current_task;
+void StartScheduler(void) {
+
+	SelectNextTask();
 
 }
 
@@ -166,9 +184,6 @@ int main(void)
 {
     /* Loop forever */
 	uint32_t val;
-
-
-	Task_Config();
 
 	tick_counter = 0ul;
 
@@ -208,7 +223,10 @@ int main(void)
 	NVIC->ISER[0] = 1 << my_irq_no; // Enabling this EXTERNAL interrupt
 	EnableInterrupts();
 
+	Task_Config();
 	ChangeStack();
+	CallSVC(Task_Control[0].psp);
+
 
 	Change2MainStack();
 

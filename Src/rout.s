@@ -7,11 +7,13 @@
 	.global DisableInterrupts
 	.global WaitForInterrupt
 	.global CallSVC
+
 	.global ChangeStack
 	.global Change2MainStack
-	.global Get_PSP
 
+	.global Get_PSP
 	.global Set_PSP
+
 	.global RegsToStack
 	.global StackToRegs
 
@@ -82,20 +84,23 @@ CallSVC:
 	svc #1
 	bx lr
 
+	@ input value of psp
+	@ output none
+	@ void ChangeStack(uint32_t psp)
 
 	.type ChangeStack, %function
 ChangeStack:
-	mrs r0, control
-	mov r1, sp      @ if this is called in thread mode stack is still main
+	mrs r1, control
+	@mov r0, sp      @ if this is called in thread mode stack is still main
 					@ but what when this routine called in handler mode?!?!
 					@
 
-	sub r1, #1024   @ it will be thread stack address
+	@ sub r1, #1024   @ it will be thread stack address
 
-	orr r0, #2
-	msr control, r0  @ from now thread mode will use PSP
+	orr r1, #2
+	msr control, r1  @ from now thread mode will use PSP
 	isb
-	mov sp, r1       @ assuming we are in thread mode it sets PSP stack
+@	msr psp, r0       @ assuming we are in thread mode it sets PSP stack
 					 @ TODO - verify beheviour of routine depending on
 					 @ is this called in Handler
 	bx lr

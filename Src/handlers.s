@@ -16,11 +16,12 @@
 	.type SVC_Handler, %function
 SVC_Handler:
 
-	mrs r1, control
-	orr r1, #1 			@ sets thread in nonprivilege mode
-	orr r1, #2			@ sets thread use PSP stack
-	msr control, r1
-	isb
+@	mrs r1, control
+@	orr r1, #1 			@ sets thread in nonprivilege mode
+@	orr r1, #2			@ sets thread use PSP stack
+@	msr control, r1
+@	isb
+	msr psp, r0
 	bx lr
 
 	.type PendSV_Handler, %function
