@@ -21,6 +21,9 @@
 #include "regs.h"
 #include "regs_core.h"
 
+#define BIT(x) ((1 << x))
+
+
 
 void EXTI1_IRQHandler(void);
 void delay(uint32_t d);
@@ -31,10 +34,20 @@ void SysTick_Handler(void);
 extern void WaitForInterrupt(void);
 extern void CallSVC(uint32_t);
 extern void ChangeStack(void);
-extern __attribute__((nacked)) void Change2MainStack(void);
-extern void * Get_PSP(void);
 
+extern __attribute__((nacked)) void Change2MainStack(void);
+
+
+extern void * Get_PSP(void);
 extern void Set_PSP(uint32_t psp);
+
+extern uint32_t RegsToStack(void);
+extern void StackToRegs(uint32_t sp);
+
+void TasksSwitch(void);
+
+extern void CallBarriers(void);
+
 
 
 void red_on(void);
@@ -85,8 +98,26 @@ struct TCB_t {
 } volatile Task_Control[TASK_NO];
 
 struct SCHED_t {
+	uint32_t prev_task;
 	uint32_t current_task;
 } volatile Scheduler;
+
+
+
+/*
+ * this pointers will be changed by scheduler
+ * values pointed will be changed by task switcher
+ *
+ * ie prev_task_psp = &Task_Control[0].psp
+ *
+ * in assembler
+ * 		mov r0, =prev_task_psp
+ * 		str r2, [r0]
+ *
+ */
+volatile uint32_t * prev_task_psp = 0ul;
+volatile uint32_t * next_task_psp;
+
 
 struct Stack_t {
 	uint32_t e[TASK_STACK_SIZE];
@@ -97,13 +128,14 @@ void Start_Scheduler(void);
 
 extern void switch_task();
 
-extern uint32_t RegsToStack(void);
-extern void StackToRegs(uint32_t * sp);
 
 
 void Task_Config(void) {
 	uint32_t stack_size, psp;
 	struct pushed_stack_t *pushed_frame;
+	uint32_t fake_xpsr = 0x01000000ul;
+
+	fake_xpsr = BIT(24);
 
 	for (int i = 0; i < TASK_NO; ++i) {
 		stack_size = sizeof (Task_Stack[0].e) / 4;
@@ -147,23 +179,34 @@ void Task_Config(void) {
 	 *
 	 */
 
-	pushed_frame->xPSR = 0x01000000ul;
+	pushed_frame->xPSR = fake_xpsr;
+	/*
+	 * 	simulates saving calee saved regs r4-r11
+	 * 	But no need in first task wich run just after
+	 * 	exit from svc handler
+	 *
+	 */
+	Task_Control[0].psp -= (8)*4;
 
-	Set_PSP(Task_Control[0].psp);
-	//psp = RegsToStack();
+	//Set_PSP(Task_Control[0].psp);
 	//Task_Control[0].psp = psp;
 
 
 	Task_Control[1].psp -= (8)*4;
 	pushed_frame = (struct pushed_stack_t *)(Task_Control[1].psp);
 	pushed_frame->pc = &Task_Off;
-	pushed_frame->xPSR = 0ul;
+	pushed_frame->xPSR = fake_xpsr;
+	Task_Control[1].psp -= (8)*4;
 	//Set_PSP(Task_Control[1].psp);
 	//psp = RegsToStack();
 	//Task_Control[1].psp = psp;
 
 	Set_PSP(Task_Control[0].psp);
+
 	Scheduler.current_task = 0ul;
+
+	prev_task_psp = 0ul;
+	next_task_psp = &Task_Control[0].psp;
 
 }
 
@@ -204,6 +247,8 @@ int main(void)
 	GPIOA->OSPEEDR = val;
 
 
+	DisableInterrupts();
+
 	/* configure periphery interrupts */
 	EXTI->IMR |= 2UL;
 	EXTI->RTSR |= 2UL;
@@ -214,9 +259,13 @@ int main(void)
 	STK->LOAD = 0x00FFFFFFul;
 	val  = 0;
 	val  = 1; /* bit 0 - enable systick */
-	val |= ( 1 << 1 ); /* bit 1 - enable exeption on couting to zero */
+	val |= ( 1 << 1 ); /* bit 1 - enable exeption on counting to zero */
 	val |= ( 1 << 2 ); /* bit 2 = 1  choses processor clock as source */
 	STK->CTRL = val;
+
+
+	/* enable  faults */
+	SCB->SHCSR |= BIT(16) | BIT(17) | BIT(18);
 
 	/* configure core interrupts */
 
@@ -224,11 +273,16 @@ int main(void)
 	EnableInterrupts();
 
 	Task_Config();
+	prev_task_psp = (uint32_t *)0ul;
+	next_task_psp = &Task_Control[0].psp;
 	ChangeStack();
-	CallSVC(Task_Control[0].psp);
+	//PendSV_Handler();
+	TasksSwitch();
+	CallBarriers();
+	//CallSVC(Task_Control[0].psp);
 
 
-	Change2MainStack();
+	//Change2MainStack();
 
 	while (1) {
 
@@ -239,11 +293,8 @@ int main(void)
 
 void EXTI1_IRQHandler(void) {
 	uint32_t val;
-	struct poped_stack_t * ps;
 
-	//stack_marker(0xa0a0a0a0, 0xe0e0e0e0);
 
-	ps = Get_PSP();
 
 	val = GPIOA->ODR;
 	if ( val & 4ul ) {
@@ -267,6 +318,8 @@ void EXTI1_IRQHandler(void) {
 void SysTick_Handler(void) {
 	uint32_t volatile val;
 
+	++tick_counter;
+
 	val = GPIOA->ODR;
 	if ( val & 1ul ) {
 		//GPIOA->BSRR = 1ul << 16;
@@ -276,27 +329,37 @@ void SysTick_Handler(void) {
 		green_on();
 	}
 
-	++tick_counter;
-	return;
+
+	/* tasks scheduling */
+
+	prev_task_psp = &Task_Control[Scheduler.current_task].psp;
+	SelectNextTask();
+	next_task_psp = &Task_Control[Scheduler.current_task].psp;
+	TasksSwitch();
+
+}
+
+void TasksSwitch(void) {
+	SCB->ICSR |= BIT(28);
 }
 
 void Task_On(void) {
-	volatile uint32_t D;
-	D = 0x3000;
+	//volatile uint32_t D;
+	//D = 0x3000;
 	while(1) {
 		red_on();
-		delay(10000);
-		++D;
+	//	delay(10000);
+	//	++D;
 	}
 }
 
 void Task_Off(void) {
-	volatile uint32_t D;
-	D = 0x2000;
+	//volatile uint32_t D;
+	//D = 0x2000;
 	while (1) {
 		red_off();
-		delay(10000);
-		++D;
+	//	delay(10000);
+	//	++D;
 	}
 }
 

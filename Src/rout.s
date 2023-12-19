@@ -17,6 +17,15 @@
 	.global RegsToStack
 	.global StackToRegs
 
+	.global CallBarriers
+
+
+	.type CallBarriers, %function
+CallBarriers:
+	isb
+	dsb
+	bx lr
+
 	@
 	@ uint32_t RegsToStack(void);
 	@ callee saved registers to current process stack = PSP
