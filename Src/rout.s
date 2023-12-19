@@ -9,7 +9,7 @@
 	.global CallSVC
 
 	.global ChangeStack
-	.global Change2MainStack
+	@.global Change2MainStack
 
 	.global Get_PSP
 	.global Set_PSP

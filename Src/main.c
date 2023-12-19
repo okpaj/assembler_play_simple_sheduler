@@ -32,10 +32,9 @@ extern void DisableInterrupts(void);
 void SysTick_Handler(void);
 
 extern void WaitForInterrupt(void);
-extern void CallSVC(uint32_t);
+extern void CallSVC();
 extern void ChangeStack(void);
 
-extern __attribute__((nacked)) void Change2MainStack(void);
 
 
 extern void * Get_PSP(void);
@@ -185,8 +184,9 @@ void Task_Config(void) {
 	 * 	But no need in first task wich run just after
 	 * 	exit from svc handler
 	 *
+	 *  Now no saving this
 	 */
-	Task_Control[0].psp -= (8)*4;
+	//Task_Control[0].psp -= (8)*4;
 
 	//Set_PSP(Task_Control[0].psp);
 	//Task_Control[0].psp = psp;
@@ -201,24 +201,14 @@ void Task_Config(void) {
 	//psp = RegsToStack();
 	//Task_Control[1].psp = psp;
 
-	Set_PSP(Task_Control[0].psp);
-
+	prev_task_psp = &Task_Control[0].psp;
+	next_task_psp = &Task_Control[1].psp;
 	Scheduler.current_task = 0ul;
-
-	prev_task_psp = 0ul;
-	next_task_psp = &Task_Control[0].psp;
-
 }
 
 void SelectNextTask(void) {
 	++Scheduler.current_task;
 	Scheduler.current_task %= TASK_NO;
-}
-
-void StartScheduler(void) {
-
-	SelectNextTask();
-
 }
 
 
@@ -270,16 +260,17 @@ int main(void)
 	/* configure core interrupts */
 
 	NVIC->ISER[0] = 1 << my_irq_no; // Enabling this EXTERNAL interrupt
-	EnableInterrupts();
+
 
 	Task_Config();
-	prev_task_psp = (uint32_t *)0ul;
-	next_task_psp = &Task_Control[0].psp;
-	ChangeStack();
+	Set_PSP(*prev_task_psp);
+
+	EnableInterrupts();
+	//ChangeStack();
 	//PendSV_Handler();
-	TasksSwitch();
-	CallBarriers();
-	//CallSVC(Task_Control[0].psp);
+	//TasksSwitch();
+	//CallBarriers();
+	CallSVC();
 
 
 	//Change2MainStack();
@@ -336,18 +327,22 @@ void SysTick_Handler(void) {
 	SelectNextTask();
 	next_task_psp = &Task_Control[Scheduler.current_task].psp;
 	TasksSwitch();
+	CallBarriers();
 
 }
 
 void TasksSwitch(void) {
-	SCB->ICSR |= BIT(28);
+	/* triger PendSV */
+	SCB->ICSR = BIT(28);
 }
 
 void Task_On(void) {
 	//volatile uint32_t D;
 	//D = 0x3000;
+
 	while(1) {
-		red_on();
+		GPIOA->BSRR = 1ul << 2;
+		//red_on();
 	//	delay(10000);
 	//	++D;
 	}
@@ -356,8 +351,10 @@ void Task_On(void) {
 void Task_Off(void) {
 	//volatile uint32_t D;
 	//D = 0x2000;
+
 	while (1) {
-		red_off();
+		GPIOA->BSRR = 1ul << (16+2);
+		//red_off();
 	//	delay(10000);
 	//	++D;
 	}
