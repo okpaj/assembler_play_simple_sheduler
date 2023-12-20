@@ -19,6 +19,8 @@
 
 	.global CallBarriers
 
+	.global get_svc_type
+
 
 	.type CallBarriers, %function
 CallBarriers:
@@ -123,3 +125,32 @@ Change2MainStack:
 	isb
 	bx lr
 
+
+	@ uint8_t get_svc_type(void)
+	@ extracts and returns svc number from psp stack
+	@ arg - defines stack on which operate
+	@ 0 means main stack
+	@ 1 means process stack
+
+	.type get_svc_type, %function
+get_svc_type:
+	@tst r0, r0
+	@ite eq
+	@mrseq r0, msp
+	@mrsne r0, psp
+	mrs r0, psp			    @ load stack pointer of interrupted thread
+
+	ldr r1, [r0, #(6*4)]	@ load PC from thread stack => OK
+
+@	ldr r2, [r1, #-4]		@ load instruction before interrupt -> somehow
+							@ this offset is not proper, very close but not
+							@ in DF## (svc ##) instruction.
+							@ Maybe -4 is working in ARM mode for all instructions
+							@ being 32 bit. But for CM offset and PC is differnt
+							@ depending on size of instruction
+	ldr r0, [r1, #-2]  		@ OK Loads svc#imm (it it 16 bit instruction)
+					   		@ into lower half of register
+	mov r1, #0xf
+	and r0, r1				@ only #imm in r0
+
+	bx lr
